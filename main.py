@@ -8,7 +8,7 @@ class Var:
         self.val = val  # 変数の値
         self.adj = 0  # 根変数をf,この変数をxとして$\frac{\partial f}{\partial x}$
         self.op_name = "var"  # 演算子名
-        self.operands = []  # オペランドのリスト
+        self.args = {}  # 引数のリスト
         self.chain_executed = False  # chainが実行済みかのフラグ
         self.graphviz_called = False  # graphviz用の出力をしたかのフラグ
 
@@ -24,29 +24,43 @@ class Var:
         while queue:
             node = queue.pop()
             node.chain()
-            for operand in node.operands:
-                operand.chain_calculated = True
-                queue.append(operand)
+            for arg in node.args.values():
+                if hasattr(arg, 'chain_executed') and not arg.chain_executed:
+                    arg.chain_executed = True
+                    queue.append(arg)
 
     def reset_adj_all(self):
         self.adj = 0
         self.chain_executed = False
+        for arg in self.args.values():
+            if hasattr(arg, 'reset_adj_all'):
+                arg.reset_adj_all()
 
     def graphviz(self, symbol_table={}, name=True, value=True, adj=True):
         self.reset_graphviz_called_all()
         s = "digraph {\n"
-        s += self.graphviz_impl(symbol_table, name, value, adj)
+        queue = []
+        self.graphviz_called = True
+        queue.append(self)
+        while queue:
+            node = queue.pop()
+            if hasattr(node, 'node_str'):
+                s += node.node_str(symbol_table=symbol_table, name=name, value=value, adj=adj)
+            for key, arg in node.args.items():
+                s += str(id(node)) + "->" + str(id(arg)) + "[dir=back, label=\"" + str(key) + "\"];\n"
+                if not isinstance(arg, Var):
+                    s += str(id(arg)) + "[label=\"" + str(arg) + "\"];\n"
+                elif not arg.graphviz_called:
+                    arg.graphviz_called = True
+                    queue.append(arg)
         s += "}"
         return s
 
     def reset_graphviz_called_all(self):
         self.graphviz_called = False
-
-    def graphviz_impl(self, symbol_table, name, value, adj):
-        if self.graphviz_called:
-            return ""
-        self.graphviz_called = True
-        return self.node_str(symbol_table=symbol_table, name=name, value=value, adj=adj)
+        for arg in self.args.values():
+            if hasattr(arg, 'reset_graphviz_called_all'):
+                arg.reset_graphviz_called_all()
 
     def node_str(self, symbol_table, name, value, adj):
         s = str(id(self)) + "[label=\"" + self.op_name + "\n"
@@ -61,40 +75,32 @@ class Var:
         s += "\"];\n"
         return s
 
+    def __eq__(self, other):
+        if type(self) != type(other):
+            return False
+        elif isinstance(self, OpMonoVar):
+            return self.arg == self.arg
+        elif isinstance(self, OpBinVar):
+            return self.larg == self.larg and self.rarg == self.rarg
+        elif isinstance(self, Var):
+            return id(self) == id(other)
+
 
 # 単項演算子の抽象クラス
 class OpMonoVar(Var):
-    def __init__(self, val: float, avi: Var):
+    def __init__(self, val: float, arg: Var):
         super().__init__(val)
-        self.avi = avi
-        self.operands = [self.avi]
-
-    def reset_adj_all(self):
-        self.adj = 0
-        self.chain_executed = False
-        self.avi.reset_adj_all()
-
-    def graphviz_impl(self, symbol_table, name, value, adj):
-        if self.graphviz_called:
-            return ""
-        self.graphviz_called = True
-        s = self.node_str(symbol_table=symbol_table, name=name, value=value, adj=adj)
-        s += str(id(self)) + "->" + str(id(self.avi)) + "[dir=back];\n"
-        s += self.avi.graphviz_impl(symbol_table=symbol_table, name=name, value=value, adj=adj)
-        return s
-
-    def reset_graphviz_called_all(self):
-        self.graphviz_called = False
-        self.avi.reset_graphviz_called_all()
+        self.arg = arg
+        self.args = {'arg': self.arg}
 
 
 class OpLogVar(OpMonoVar):
-    def __init__(self, avi: Var):
-        super().__init__(math.log(avi.val), avi)
+    def __init__(self, arg: Var):
+        super().__init__(math.log(arg.val), arg)
         self.op_name = "log"
 
     def chain(self):
-        self.avi.adj += self.adj * 1.0 / self.avi.val
+        self.arg.adj += self.adj * 1.0 / self.arg.val
 
 
 def log(x: Var):
@@ -103,109 +109,96 @@ def log(x: Var):
 
 # 二項演算子の抽象クラス
 class OpBinVar(Var):
-    def __init__(self, val: float, avi: Var, bvi):
+    def __init__(self, val: float, l, r):
         super().__init__(val)
-        self.avi = avi
-        self.bvi = bvi
-        self.operands = [self.avi, self.bvi]
-
-    def reset_adj_all(self):
-        self.adj = 0
-        self.chain_executed = False
-        self.avi.reset_adj_all()
-        if not isinstance(self.bvi, float):
-            self.bvi.reset_adj_all()
-
-    def graphviz_impl(self, symbol_table: dict, name: bool, value: bool, adj: bool):
-        if self.graphviz_called:
-            return ""
-        self.graphviz_called = True
-        s = self.node_str(symbol_table=symbol_table, name=name, value=value, adj=adj)
-        s += str(id(self)) + "->" + str(id(self.avi)) + "[dir=back];\n"
-        s += str(id(self)) + "->" + str(id(self.bvi)) + "[dir=back];\n"
-        s += self.avi.graphviz_impl(symbol_table=symbol_table, name=name, value=value, adj=adj)
-        if isinstance(self.bvi, float):
-            s += str(id(self.bvi)) + "[label=\"" + str(self.bvi) + "\"];\n"
-        else:
-            s += self.bvi.graphviz_impl(symbol_table=symbol_table, name=name, value=value, adj=adj)
-        return s
-
-    def reset_graphviz_called_all(self):
-        self.graphviz_called = False
-        self.avi.reset_graphviz_called_all()
-        self.bvi.reset_graphviz_called_all()
+        self.larg = l
+        self.rarg = r
+        self.args = {'left': self.larg, 'right': self.rarg}
 
 
 class OpAddVar(OpBinVar):
-    def __init__(self, avi: Var, bvi):
-        if isinstance(avi, Var) and isinstance(bvi, Var):
-            super().__init__(avi.val + bvi.val, avi, bvi)
+    def __init__(self, larg: Var, rarg):
+        if isinstance(larg, Var) and isinstance(rarg, Var):
+            super().__init__(larg.val + rarg.val, larg, rarg)
             self.chain = self.chain_vv
-        elif isinstance(avi, Var) and (isinstance(bvi, float) or isinstance(bvi, int)):
-            super().__init__(avi.val + bvi, avi, bvi)
+        elif not isinstance(larg, Var) and isinstance(rarg, Var):
+            super().__init__(larg + rarg.val, larg, rarg)
+            self.chain = self.chain_fv
+        elif isinstance(larg, Var) and not isinstance(rarg, Var):
+            super().__init__(larg.val + rarg, larg, rarg)
             self.chain = self.chain_vf
         else:
             raise Exception("invalid type of argument")
         self.op_name = "+"
 
     def chain_vv(self):
-        self.avi.adj += self.adj
-        self.bvi.adj += self.adj
+        self.larg.adj += self.adj
+        self.rarg.adj += self.adj
 
     def chain_vf(self):
-        self.avi.adj += self.adj
+        self.larg.adj += self.adj
+
+    def chain_fv(self):
+        self.rarg.adj += self.adj
 
 
-def v_ladd(l: Var, r):
-    return OpAddVar(l, r)
-
-
-def v_radd(r: Var, l):
+def v_add(l, r):
     return OpAddVar(r, l)
 
 
-Var.__add__ = v_ladd
+def v_radd(r, l):
+    return OpAddVar(r, l)
+
+
+Var.__add__ = v_add
 Var.__radd__ = v_radd
 
 
 class OpMulVar(OpBinVar):
-    def __init__(self, avi: Var, bvi):
-        if isinstance(avi, Var) and isinstance(bvi, Var):
-            super().__init__(avi.val * bvi.val, avi, bvi)
+    def __init__(self, larg: Var, rarg):
+        if isinstance(larg, Var) and isinstance(rarg, Var):
+            super().__init__(larg.val * rarg.val, larg, rarg)
             self.chain = self.chain_vv
-        elif isinstance(avi, Var) and (isinstance(bvi, float) or isinstance(bvi, int)):
-            super().__init__(avi.val * bvi, avi, bvi)
+        elif not isinstance(larg, Var) and isinstance(rarg, Var):
+            super().__init__(larg * rarg.val, larg, rarg)
+            self.chain = self.chain_fv
+        elif isinstance(larg, Var) and not isinstance(rarg, Var):
+            super().__init__(larg.val * rarg, larg, rarg)
             self.chain = self.chain_vf
         else:
             raise Exception("invalid type of argument")
         self.op_name = "*"
 
     def chain_vv(self):
-        self.avi.adj += self.adj * self.bvi.val
-        self.bvi.adj += self.adj * self.avi.val
+        self.larg.adj += self.adj * self.rarg.val
+        self.rarg.adj += self.adj * self.larg.val
+
+    def chain_fv(self):
+        self.rarg.adj += self.adj * self.larg.val
 
     def chain_vf(self):
-        self.avi.adj += self.adj * self.bvi.val
+        self.larg.adj += self.adj * self.rarg.val
 
 
-def v_lmul(l: Var, r):
+def v_mul(l, r):
     return OpMulVar(l, r)
 
 
-def v_rmul(r: Var, l):
-    return OpMulVar(r, l)
+def v_rmul(r, l):
+    return OpMulVar(l, r)
 
 
-Var.__mul__ = v_lmul
+Var.__mul__ = v_mul
 Var.__rmul__ = v_rmul
 
 
 def test():
     x = Var(2.0)
     y = Var(2.0)
-    z = (x + y) * (x + y)  # 式の構築
+    z = (x + y) + 2.0  # 式の構築
     z.grad()  # dz/dx,dz/dyを計算(x.adj,y.adj)で取得できる
     s = z.graphviz(symbol_table=locals())  # graphviz用のstringを取得
+    print(s)
     file = open("graph.dot", "w")
     file.write(s)
     file.close()
