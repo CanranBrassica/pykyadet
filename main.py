@@ -83,10 +83,9 @@ class OpMonoVar(Var):
         s += self.avi.graphviz_impl(symbol_table=symbol_table, name=name, value=value, adj=adj)
         return s
 
-
-def reset_graphviz_called_all(self):
-    self.graphviz_called = False
-    self.avi.reset_graphviz_called_all()
+    def reset_graphviz_called_all(self):
+        self.graphviz_called = False
+        self.avi.reset_graphviz_called_all()
 
 
 class OpLogVar(OpMonoVar):
@@ -204,13 +203,13 @@ Var.__rmul__ = v_rmul
 def test():
     x = Var(2.0)
     y = Var(2.0)
-    z = (x + y) * (x + y)   # 式の構築
-    z.grad()                # dz/dx,dz/dyを計算(x.adj,y.adj)で取得できる
-    s = z.graphviz(symbol_table=locals())   # graphviz用のstringを取得
+    z = (x + y) * (x + y)  # 式の構築
+    z.grad()  # dz/dx,dz/dyを計算(x.adj,y.adj)で取得できる
+    s = z.graphviz(symbol_table=locals())  # graphviz用のstringを取得
     file = open("graph.dot", "w")
     file.write(s)
     file.close()
-    os.system("dot -Tpng graph.dot -o graph.png")   # graph.pngに計算グラフが出力される
+    os.system("dot -Tpng graph.dot -o graph.png")  # graph.pngに計算グラフが出力される
 
 
 if __name__ == "__main__":
