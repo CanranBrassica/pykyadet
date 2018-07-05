@@ -98,9 +98,22 @@ class Var:
                 arg.reset_adj_all()
 
     def __str__(self):
+        """
+        :return: string
+        数式形式のstringを返す
+        変数名はわからないため,変数のところには数値が入る
+        継承したら必要に応じてオーバーライドする
+        """
         return str(self.val)
 
     def to_s(self, symbol_table={}):
+        """
+        :param symbol_table:
+        :return:
+        数式形式のstringを返す
+        symbol_tableを渡すことによってselfを表す変数名がわかる
+        継承したら必要に応じてオーバーライドする
+        """
         for k, v in symbol_table.items():
             if id(v) == id(self):
                 return str(k)
@@ -195,9 +208,16 @@ class OpMonoVar(Var):
         self.args = {'arg': self.arg}
 
     def __str__(self):
-        return self.op_name + "(" + str(self.arg) + ")"
+        """
+        :return:  "self.op_name""self.arg"形式のstringを返す
+        """
+        return self.op_name + str(self.arg)
 
     def to_s(self, symbol_table={}):
+        """
+        :param symbol_table: locals()などを渡すと,それを元にVarの名前を出力する
+        :return:  "self.op_name""self.arg"形式のstringを返す
+        """
         return self.op_name + self.arg.to_s(symbol_table=symbol_table)
 
 
@@ -349,9 +369,16 @@ class OpBinVar(Var):
         self.args = {'left': self.larg, 'right': self.rarg}
 
     def __str__(self):
+        """
+        :return:  ("self.larg""self.op_name""self.rarg")形式のstringを返す
+        """
         return "(" + str(self.larg) + self.op_name + str(self.rarg) + ")"
 
     def to_s(self, symbol_table={}):
+        """
+        :param symbol_table: locals()などを渡すと,それを元にVarの名前を出力する
+        :return:  ("self.larg""self.op_name""self.rarg")形式のstringを返す
+        """
         if isinstance(self.larg, Var) and isinstance(self.rarg, Var):
             return "(" + self.larg.to_s(symbol_table) + self.op_name + self.rarg.to_s(symbol_table) + ")"
         elif not isinstance(self.larg, Var) and isinstance(self.rarg, Var):
@@ -772,7 +799,7 @@ def test():
     z.grad()  # ∂z/∂x,∂z/∂yを計算(x.adj,y.adj)で取得できる
     dzdx = x.adj
     print("∂z/∂x =", dzdx.to_s(symbol_table=locals()), "=", dzdx.val)
-    dzdx.grad()  # 何回でも微分できる
+    dzdx.grad()  # adjが定数にならない限り,何回でも微分できる.
     dzdxdy = y.adj
     print("∂^2z/∂y∂x =", dzdxdy.to_s(symbol_table=locals()), "=", dzdxdy.val)
 
