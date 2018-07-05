@@ -23,7 +23,9 @@ $$
 $u_i$が表す基本演算を用いれば$\frac{\partial u_i}{\partial w}$は計算できるので
 zから辿っていくことで全ての中間変数,変数wについて$\bar{w}$が計算できる
 
-参考:https://ja.wikipedia.org/wiki/%E8%87%AA%E5%8B%95%E5%BE%AE%E5%88%86
+参考:
+* https://ja.wikipedia.org/wiki/%E8%87%AA%E5%8B%95%E5%BE%AE%E5%88%86
+* https://arxiv.org/abs/1509.07164
 """
 
 import math
@@ -32,8 +34,9 @@ import math
 class Var:
     r"""
     変数を表すクラス
-    このクラスのオブジェクトは計算グラフで葉となる
+    このクラスのオブジェクトは計算グラフで基本的に葉となる
     他のクラスもこのクラスを継承している
+    定数は組み込み型のfloatで表すものをする
     self.val: この(中間)変数の値
     self.adj: 根変数をf,この変数をxとして$\frac{\partial f}{\partial x}$
     self.op_name: 演算子名
@@ -47,7 +50,7 @@ class Var:
         :param val: このオブジェクトの値
         """
         self.val = val
-        self.adj = 0
+        self.adj = 0.0
         self.op_name = "var"
         self.args = {}
         self.chain_executed = False
@@ -70,7 +73,7 @@ class Var:
         :return: no return
         """
         self.reset_adj_all()
-        self.adj = 1  # 定義より
+        self.adj = 1.0  # 定義より
         queue = []
         self.chain_executed = True
         queue.append(self)
@@ -88,7 +91,7 @@ class Var:
         gradメソッドを呼ぶと微分を実行する前に呼ばれる
         :return: no return
         """
-        self.adj = 0
+        self.adj = 0.0
         self.chain_executed = False
         for arg in self.args.values():
             if hasattr(arg, 'reset_adj_all'):
@@ -144,7 +147,7 @@ class Var:
     def reset_graphviz_called_all(self):
         r"""
         graphvizメソッドの最初で呼んでリセットする
-        :return:
+        :return: no return
         """
         self.graphviz_called = False
         for arg in self.args.values():
@@ -168,7 +171,10 @@ class Var:
         if value:
             s += "val: " + str(self.val) + "\n"
         if adj:
-            s += "adj: " + str(self.adj) + "\n"
+            if hasattr(self.adj, 'val'):
+                s += "adj: " + str(self.adj.val) + "\n"
+            else:
+                s += "adj: " + str(self.adj) + "\n"
         s += "\"];\n"
         return s
 
@@ -222,6 +228,8 @@ def v_neg(x: Var):
     :param x:
     :return: -x
     """
+    if isinstance(x, OpNegVar):  # --x == x
+        return x.arg
     return OpNegVar(x)
 
 
@@ -248,7 +256,7 @@ class OpLogVar(OpMonoVar):
         $$
         :return:
         """
-        self.arg.adj += self.adj / self.arg.val
+        self.arg.adj += self.adj / self.arg
 
 
 def log(x: Var):
@@ -256,7 +264,10 @@ def log(x: Var):
     :param x:
     :return: log(x)
     """
-    return OpLogVar(x)
+    if isinstance(x, OpPowVar):  # log(a**b) == b * log(a)
+        return x.rarg * OpLogVar(x.larg)
+    else:
+        return OpLogVar(x)
 
 
 class OpSinVar(OpMonoVar):
@@ -278,7 +289,7 @@ class OpSinVar(OpMonoVar):
         $$
         :return:
         """
-        self.arg.adj += self.adj * math.cos(self.arg.val)
+        self.arg.adj += self.adj * cos(self.arg)
 
 
 def sin(x: Var):
@@ -308,7 +319,7 @@ class OpCosVar(OpMonoVar):
         $$
         :return:
         """
-        self.arg.adj -= self.adj * math.sin(self.arg.val)
+        self.arg.adj -= self.adj * sin(self.arg)
 
 
 def cos(x: Var):
@@ -401,18 +412,42 @@ class OpAddVar(OpBinVar):
 
 
 def v_add(l, r):
+    if not isinstance(l, Var) and l == 0:  # 0 + r == r
+        return r
+    if not isinstance(r, Var) and r == 0:  # l + 0 == l
+        return l
+    if isinstance(l, OpMulVar) and (type(r) == OpMulVar):
+        if l.larg == r.larg:  # a * b + a * c == a * (b + c)
+            return l.larg * (l.rarg + r.rarg)
+        if l.rarg == r.larg:  # a * b + b * c == b *(a + c)
+            return l.rarg * (l.larg + r.rarg)
+        if l.larg == r.rarg:  # a * b + c * a == a * (b + c)
+            return l.larg * (l.rarg + r.larg)
+        if l.rarg == r.rarg:  # a * b + c * b == b * (a + c)
+            return l.rarg * (l.larg + r.larg)
+    if isinstance(l, OpMulVar):
+        if l.larg == r:  # a * b + a = a * (b + 1)
+            return l.larg * (l.rarg + 1.0)
+        if l.rarg == r:  # a * b + b = b * (a + 1)
+            return l.rarg * (l.larg + 1.0)
+    if isinstance(r, OpMulVar):
+        if l == r.larg:  # a + a * b = a * (b + 1)
+            return l * (r.rarg + 1.0)
+        if l == r.rarg:  # b + a * b = b * (a + 1)
+            return l * (r.larg + 1.0)
+    if l == r:
+        return l * 2.0
+    if isinstance(l, OpLogVar) and isinstance(r, OpLogVar):  # log(x) + log(y) == log(xy)
+        return log(l.arg * r.arg)
     return OpAddVar(l, r)
 
 
 def v_radd(r, l):
-    return OpAddVar(l, r)
+    return v_add(l, r)
 
 
 Var.__add__ = v_add
 Var.__radd__ = v_radd
-
-
-# def v_iadd(l, r):  # l += r
 
 
 class OpSubVar(OpBinVar):
@@ -467,11 +502,39 @@ class OpSubVar(OpBinVar):
 
 
 def v_sub(l, r):
-    return OpSubVar(l, r)
+    if not isinstance(l, Var) and l == 0:  # 0 - r  == r
+        return -r
+    if not isinstance(r, Var) and r == 0:  # l - 0 == l
+        return l
+    if isinstance(l, OpLogVar) and isinstance(r, OpLogVar):  # log(x) - log(y) == log(x/y)
+        return log(l.arg - r.arg)
+    if isinstance(l, OpMulVar) and (type(r) == OpMulVar):
+        if l.larg == r.larg:  # a * b - a * c == a * (b - c)
+            return l.larg * (l.rarg - r.rarg)
+        if l.rarg == r.larg:  # a * b - b * c == b *(a - c)
+            return l.rarg * (l.larg - r.rarg)
+        if l.larg == r.rarg:  # a * b - c * a == a * (b - c)
+            return l.larg * (l.rarg - r.larg)
+        if l.rarg == r.rarg:  # a * b - c * b == b * (a - c)
+            return l.rarg * (l.larg - r.larg)
+    if isinstance(l, OpMulVar):
+        if l.larg == r:  # a * b - a = a * (b - 1)
+            return l.larg * (l.rarg - 1.0)
+        if l.rarg == r:  # a * b + b = b * (a - 1)
+            return l.rarg * (l.larg - 1.0)
+    if isinstance(r, OpMulVar):
+        if l == r.larg:  # a - a * b = a * (1 - b)
+            return l * (1.0 - r.rarg)
+        if l == r.rarg:  # b - a * b = b * (1 - a)
+            return l * (1.0 - r.larg)
+    if l == r:
+        return 0.0
+    else:
+        return OpSubVar(l, r)
 
 
 def v_rsub(r, l):
-    return OpSubVar(l, r)
+    return v_sub(l, r)
 
 
 Var.__sub__ = v_sub
@@ -511,8 +574,8 @@ class OpMulVar(OpBinVar):
         \frac{\parial lr}{\partial r} = l
         $$
         """
-        self.larg.adj += self.adj * self.rarg.val
-        self.rarg.adj += self.adj * self.larg.val
+        self.larg.adj += self.adj * self.rarg
+        self.rarg.adj += self.adj * self.larg
 
     def chain_fv(self):
         r"""
@@ -530,11 +593,30 @@ class OpMulVar(OpBinVar):
 
 
 def v_mul(l, r):
-    return OpMulVar(l, r)
+    if not isinstance(l, Var) and l == 0:  # 0 * r == 0
+        return 0.0
+    elif not isinstance(r, Var) and r == 0:  # l * 0 == l
+        return 0.0
+    elif not isinstance(r, Var) and r == 1.0:  # l * 1 == l
+        return l
+    elif not isinstance(l, Var) and l == 1.0:  # 1 * r == r
+        return r
+    elif not isinstance(l, Var) and l == -1.0:  # -1 * r ==  -r
+        return -r
+    elif not isinstance(r, Var) and r == -1.0:  # l * -1 == l
+        return -l
+    elif isinstance(l, OpPowVar) and isinstance(r, OpPowVar) and l.larg == r.larg:  # a ** b * a ** c ==  a ** (b + c)
+        return l.larg ** (l.rarg + r.rarg)
+    elif isinstance(l, OpPowVar) and l.larg == r:  # a ** b * a  ==  a ** (b + 1)
+        return l.larg ** (l.rarg + 1.0)
+    elif isinstance(r, OpPowVar) and l == r.larg:  # a * a ** b  ==  a ** (b + 1)
+        return r.larg ** (r.rarg + 1.0)
+    else:
+        return OpMulVar(l, r)
 
 
 def v_rmul(r, l):
-    return OpMulVar(l, r)
+    return v_mul(l, r)
 
 
 Var.__mul__ = v_mul
@@ -574,15 +656,15 @@ class OpDivVar(OpBinVar):
         \frac{\parial l / r}{\partial r} = -l / r^2
         $$
         """
-        self.larg.adj += self.adj / self.rarg.val
-        self.rarg.adj += self.adj * -self.larg.val / self.rarg.val ** 2
+        self.larg.adj += self.adj / self.rarg
+        self.rarg.adj += self.adj * -self.larg / self.rarg ** 2.0
 
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
         :return:
         """
-        self.rarg.adj += self.adj * -self.larg / self.rarg.val ** 2
+        self.rarg.adj += self.adj * -self.larg / self.rarg ** 2.0
 
     def chain_vf(self):
         r"""
@@ -593,11 +675,18 @@ class OpDivVar(OpBinVar):
 
 
 def v_div(l, r):
-    return OpDivVar(l, r)
+    if not isinstance(l, Var) and l == 0:  # 0 / r == 0
+        return 0.0
+    elif not isinstance(r, Var) and r == 1.0:  # l / 1 == l
+        return l
+    elif isinstance(l, OpPowVar) and isinstance(r, OpPowVar) and l.larg == r.larg:  # a ** b / a ** c ==  a ** (b - c)
+        return l.larg ** (l.rarg - r.rarg)
+    else:
+        return OpDivVar(l, r)
 
 
 def v_rdiv(r, l):
-    return OpDivVar(l, r)
+    return v_div(l, r)
 
 
 Var.__truediv__ = v_div
@@ -638,30 +727,37 @@ class OpPowVar(OpBinVar):
         \frac{\parial l^r}{\partial r} = l^r * \log(l)
         $$
         """
-        self.larg.adj += self.adj * self.rarg.val * self.larg.val ** (self.rarg.val - 1)
-        self.rarg.adj += self.adj * self.larg.val ** self.rarg.val * math.log(self.larg.val)
+        self.larg.adj += self.adj * self.rarg * self.larg ** (self.rarg - 1.0)
+        self.rarg.adj += self.adj * self.larg ** self.rarg * log(self.larg)
 
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
         :return:
         """
-        self.rarg.adj += self.adj * self.larg ** self.rarg.val * math.log(self.larg)
+        self.rarg.adj += self.adj * self.larg ** self.rarg * math.log(self.larg)
 
     def chain_vf(self):
         r"""
         lがVarのinstance,rがfloatの場合のchainメソッド
         :return:
         """
-        self.larg.adj += self.adj * self.rarg * self.larg.val ** (self.rarg - 1)
+        self.larg.adj += self.adj * self.rarg * self.larg ** (self.rarg - 1.0)
 
 
 def v_pow(l, r):
-    return OpPowVar(l, r)
+    if not isinstance(r, Var) and r == 1.0:  # l ** 1 == l
+        return l
+    elif not isinstance(r, Var) and r == 0.0:  # l ** 0 == 1
+        return 1.0
+    elif isinstance(l, OpPowVar):  # (a ** b) ** r == a ** (b * r)
+        return l.larg ** (l.rarg * r)
+    else:
+        return OpPowVar(l, r)
 
 
 def v_rpow(r, l):
-    return OpPowVar(l, r)
+    return v_pow(l, r)
 
 
 Var.__pow__ = v_pow
@@ -669,13 +765,19 @@ Var.__rpow__ = v_rpow
 
 
 def test():
-    x = Var(math.pi)
+    x = Var(1.0)
     y = Var(1.0)
-    z = log(x) + y ** 2.0  # 式の構築
-    print(z.to_s(symbol_table=locals()))
-    z.grad()  # dz/dx,dz/dyを計算(x.adj,y.adj)で取得できる
-    s = z.graphviz(symbol_table=locals())  # graphviz用のstringを取得
+    z = x * y + log(x ** y)  # 式の構築 構築時にある程度最適化される(この場合, y*(x+logx) となる)
+    print("z =", z.to_s(symbol_table=locals()), "=", z.val)  # to_sメソッドでlocals()を用いてstringを取得できる valメンバにはその変数の値が入る
+    z.grad()  # ∂z/∂x,∂z/∂yを計算(x.adj,y.adj)で取得できる
+    dzdx = x.adj
+    print("∂z/∂x =", dzdx.to_s(symbol_table=locals()), "=", dzdx.val)
+    dzdx.grad()  # 何回でも微分できる
+    dzdxdy = y.adj
+    print("∂^2z/∂y∂x =", dzdxdy.to_s(symbol_table=locals()), "=", dzdxdy.val)
+
     # 画像生成
+    s = dzdx.graphviz(symbol_table=locals())  # graphviz用のstringを取得
     import os
     file = open("graph.dot", "w")
     print(s, file=file)
