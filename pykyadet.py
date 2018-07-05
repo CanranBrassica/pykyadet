@@ -86,7 +86,7 @@ class Var:
         r"""
         再帰的に全ての中間変数についてadjメンバを0リセットする.
         gradメソッドを呼ぶと微分を実行する前に呼ばれる
-        :return:
+        :return: no return
         """
         self.adj = 0
         self.chain_executed = False
@@ -101,7 +101,7 @@ class Var:
         for k, v in symbol_table.items():
             if id(v) == id(self):
                 return str(k)
-        return "Var(" + self.val + ")"
+        return self.op_name + "(" + str(self.val) + ")"
 
     def __eq__(self, other):
         if type(self) != type(other):
@@ -143,7 +143,7 @@ class Var:
 
     def reset_graphviz_called_all(self):
         r"""
-        graphvizメソッドの最初で読んでリセットする
+        graphvizメソッドの最初で呼んでリセットする
         :return:
         """
         self.graphviz_called = False
@@ -192,7 +192,7 @@ class OpMonoVar(Var):
         return self.op_name + "(" + str(self.arg) + ")"
 
     def to_s(self, symbol_table={}):
-        return self.op_name + "(" + self.arg.to_s(symbol_table=symbol_table) + ")"
+        return self.op_name + self.arg.to_s(symbol_table=symbol_table)
 
 
 class OpNegVar(OpMonoVar):
@@ -214,7 +214,7 @@ class OpNegVar(OpMonoVar):
         $$
         :return: no return
         """
-        self.arg.adj += self.adj * -1
+        self.arg.adj -= self.adj
 
 
 def v_neg(x: Var):
@@ -248,7 +248,7 @@ class OpLogVar(OpMonoVar):
         $$
         :return:
         """
-        self.arg.adj += self.adj * 1.0 / self.arg.val
+        self.arg.adj += self.adj / self.arg.val
 
 
 def log(x: Var):
@@ -308,7 +308,7 @@ class OpCosVar(OpMonoVar):
         $$
         :return:
         """
-        self.arg.adj += self.adj * -math.sin(self.arg.val)
+        self.arg.adj -= self.adj * math.sin(self.arg.val)
 
 
 def cos(x: Var):
@@ -412,6 +412,9 @@ Var.__add__ = v_add
 Var.__radd__ = v_radd
 
 
+# def v_iadd(l, r):  # l += r
+
+
 class OpSubVar(OpBinVar):
     r"""
     減算を表すクラス
@@ -446,7 +449,7 @@ class OpSubVar(OpBinVar):
         $$
         """
         self.larg.adj += self.adj
-        self.rarg.adj += self.adj * -1
+        self.rarg.adj -= self.adj
 
     def chain_vf(self):
         r"""
@@ -460,7 +463,7 @@ class OpSubVar(OpBinVar):
         lがfloat,rがVarのinstanceの場合のchainメソッド
         :return:
         """
-        self.rarg.adj += self.adj * -1
+        self.rarg.adj -= self.adj
 
 
 def v_sub(l, r):
@@ -504,8 +507,8 @@ class OpMulVar(OpBinVar):
         l,rともにVarのinstanceの場合のchainメソッド
         :return:
         $$
-        \frac{\parial l * r}{\partial l} = r
-        \frac{\parial l * r}{\partial r} = l
+        \frac{\parial lr}{\partial l} = r
+        \frac{\parial lr}{\partial r} = l
         $$
         """
         self.larg.adj += self.adj * self.rarg.val
@@ -568,7 +571,7 @@ class OpDivVar(OpBinVar):
         :return:
         $$
         \frac{\parial l / r}{\partial l} = 1 / r
-        \frac{\parial l / r}{\partial r} = -l / r ** 2
+        \frac{\parial l / r}{\partial r} = -l / r^2
         $$
         """
         self.larg.adj += self.adj / self.rarg.val
@@ -631,8 +634,8 @@ class OpPowVar(OpBinVar):
         l,rともにVarのinstanceの場合のchainメソッド
         :return:
         $$
-        \frac{\parial l ** r}{\partial l} = r * l ** (r - 1)
-        \frac{\parial l ** r}{\partial r} = l ** r * \log(l)
+        \frac{\parial l^r}{\partial l} = r * l^(r - 1)
+        \frac{\parial l^r}{\partial r} = l^r * \log(l)
         $$
         """
         self.larg.adj += self.adj * self.rarg.val * self.larg.val ** (self.rarg.val - 1)
@@ -676,7 +679,6 @@ def test():
     import os
     file = open("graph.dot", "w")
     print(s, file=file)
-    # file.write(s)
     file.close()
     os.system("dot -Tpng graph.dot -o graph.png")  # graph.pngに計算グラフが出力される
 
