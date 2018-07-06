@@ -1,31 +1,29 @@
 # -*- coding:utf-8 -*-
 r"""
-pykyadet: reverse mode 自動微分モジュール
-普通に式を構築すると,その式がグラフの形で保存される
-このグラフのnodeは基本演算(加減乗除やlog,sinなど)を表す
-基本演算の組み合わせで構築される式ならどんな式であってもグラフを構築できる
-それをたどることで微分演算を行う
-複雑な式であっても実装された演算の組み合わせなら微分が可能である
+このモジュールを用いて,
+プログラム上で数式を構築すると,その式はその場で計算されるのではなく
+グラフの形で保存される.
+このグラフのnodeは基本演算(加減乗除やlog,sinなど)を表す.
+基本演算の組み合わせで構築される式ならどんな式であってもグラフを構築でき,
+それをたどることで微分演算を行う.
+複雑な式であっても実装された演算の組み合わせなら微分が可能である.
 
-$z = f(x,y)$とする.ある中間変数(node)をwとする.
-wが表す基本演算をgとし,中間変数$u_i$がwに陽に依存するとする.
-$\bar{w}=\frac{\partial z}{\partial w}$とし,他の変数についても同様とすると
-連鎖律を用いて
-$$
-\begin{align*}
-\bar{w}&=\frac{\partial z}{\partial w}\\
-&=\sum_i\frac{\partial z}{\partial u_i}\frac{\partial u_i}{\partial w}\\
-&=\sum_i\bar{u_i}\frac{\partial u_i}{\partial w}
-\end{align*}
-$$
+構築した数式を :math:`z = f(x,y)` とし,これを基本演算に分解し,適当な中間変数(node)を :math:`w` とする.
+中間変数 :math:`u_i` が :math:`w` に陽に依存するとする.
+:math:`\bar{w}=\frac{\partial z}{\partial w}` とし,他の変数についても同様とすると
+
+.. math ::
+    \bar{w}&=\frac{\partial z}{\partial w}\\
+    &=\sum_i\frac{\partial z}{\partial u_i}\frac{\partial u_i}{\partial w}\\
+    &=\sum_i\bar{u_i}\frac{\partial u_i}{\partial w}\\
 と表せる.
-また定義より$\bar{z}=1$であり,
-$u_i$が表す基本演算を用いれば$\frac{\partial u_i}{\partial w}$は計算できるので
-zから辿っていくことで全ての中間変数,変数wについて$\bar{w}$が計算できる
+また定義より :math:`\bar{z}=1` であり,
+:math:`u_i` が表す基本演算を用いれば :math:`\frac{\partial u_i}{\partial w}` は計算できるので
+:math:`z` から辿っていくことで全ての中間変数,変数 :math:`w` について :math:`\bar{w}` が計算できる
 
 参考:
-* https://ja.wikipedia.org/wiki/%E8%87%AA%E5%8B%95%E5%BE%AE%E5%88%86
-* https://arxiv.org/abs/1509.07164
+    - https://ja.wikipedia.org/wiki/%E8%87%AA%E5%8B%95%E5%BE%AE%E5%88%86
+    - https://arxiv.org/abs/1509.07164
 """
 
 import math
@@ -34,15 +32,21 @@ import math
 class Var:
     r"""
     変数を表すクラス
+
     このクラスのオブジェクトは計算グラフで基本的に葉となる
+
     他のクラスもこのクラスを継承している
+
     定数は組み込み型のfloatで表すものをする
-    self.val: この(中間)変数の値
-    self.adj: 根変数をf,この変数をxとして$\frac{\partial f}{\partial x}$
-    self.op_name: 演算子名
-    self.args: 引数の辞書 keyはその引数の属性(演算子の右か左かなど),valueは引数(への参照)
-    self.chain_executed:  chainが実行済みかのフラグ
-    self.graphviz_called: graphviz用の出力をしたかのフラグ
+
+    メンバ変数の一覧
+        - self.val この(中間)変数の値
+        - self.adj 根変数を :math:`f` ,この変数を :math:`x` として :math:`\frac{\partial f}{\partial x}`
+        - self.op_name 演算子名
+        - self.args 引数の辞書  keyはその引数の属性(演算子の右か左かなど),valueは引数(への参照)
+        - self.chain_executed  chainが実行済みかのフラグ
+        - self.graphviz_called graphviz用の出力をしたかのフラグ
+
     """
 
     def __init__(self, val):
@@ -59,18 +63,20 @@ class Var:
     def chain(self):
         r"""
         連鎖律を計算する関数
+
         演算を表すクラスではこれをオーバーライドしなければならない
+
         現在の実装では初期化時にchain_vv,chain_vf,chain_fvで上書きするようになっている
+
         Varクラスでは何もしない
-        :return: no return
         """
         pass
 
     def grad(self):
         r"""
         全ての変数についてadjメンバを計算する
+
         ある変数についてadjメンバを計算するにはその変数に依存している変数を計算し終わっている必要があるので,幅優先で計算している
-        :return: no return
         """
         self.reset_adj_all()
         self.adj = 1.0  # 定義より
@@ -88,7 +94,9 @@ class Var:
     def reset_adj_all(self):
         r"""
         再帰的に全ての中間変数についてadjメンバを0リセットする.
+
         gradメソッドを呼ぶと微分を実行する前に呼ばれる
+
         :return: no return
         """
         self.adj = 0.0
@@ -100,19 +108,24 @@ class Var:
     def __str__(self):
         """
         :return: string
+
         数式形式のstringを返す
+
         変数名はわからないため,変数のところには数値が入る
+
         継承したら必要に応じてオーバーライドする
         """
         return str(self.val)
 
     def to_s(self, symbol_table={}):
         """
-        :param symbol_table:
-        :return:
-        数式形式のstringを返す
-        symbol_tableを渡すことによってselfを表す変数名がわかる
-        継承したら必要に応じてオーバーライドする
+        :param symbol_table: {変数名:オブジェクト}となるdict. locals()などを渡すとよい
+
+        :return: 数式形式のstring
+
+        symbol_tableを渡すことによってselfを表す変数名を取得している
+
+        Varを継承したら必要に応じてオーバーライドする
         """
         for k, v in symbol_table.items():
             if id(v) == id(self):
@@ -131,12 +144,12 @@ class Var:
 
     def graphviz(self, symbol_table={}, name=True, value=True, adj=True):
         r"""
-        graphviz用の出力を得る
         :param symbol_table: {変数名:オブジェクト}となるdict locals()などを渡すとよい
         :param name: (あれば)変数名を出力するか
         :param value: valを出力するか
         :param adj: adjを出力するか
         :return: string for graphviz
+        graphviz用の出力を得る
         """
         self.reset_graphviz_called_all()
         s = "digraph {\n"
@@ -160,7 +173,6 @@ class Var:
     def reset_graphviz_called_all(self):
         r"""
         graphvizメソッドの最初で呼んでリセットする
-        :return: no return
         """
         self.graphviz_called = False
         for arg in self.args.values():
@@ -169,12 +181,12 @@ class Var:
 
     def node_str(self, symbol_table, name, value, adj):
         r"""
-        各nodeに関する情報をstring for graphvizで返す
         :param symbol_table: {変数名:オブジェクト}となるdict locals()などを渡すとよい
         :param name: (あれば)変数名を出力するか
         :param value: valを出力するか
         :param adj: adjを出力するか
         :return: string for graphviz
+        各nodeに関する情報をstring for graphvizで返す
         """
         s = str(id(self)) + "[label=\"" + self.op_name + "\n"
         if name:
@@ -195,6 +207,7 @@ class Var:
 class OpMonoVar(Var):
     r"""
     単項演算子を表すクラス
+
     単項演算子はこれを継承して実装される
     """
 
@@ -224,6 +237,9 @@ class OpMonoVar(Var):
 class OpNegVar(OpMonoVar):
     r"""
     単項マイナスを表すクラス
+
+    .. :math::
+        \frac{\partial -x}{\partial x} = -1
     """
 
     def __init__(self, arg: Var):
@@ -234,20 +250,10 @@ class OpNegVar(OpMonoVar):
         self.op_name = "-"
 
     def chain(self):
-        r"""
-        $$
-        \frac{\partial -x}{\partial x} = -1
-        $$
-        :return: no return
-        """
         self.arg.adj -= self.adj
 
 
 def v_neg(x: Var):
-    r"""
-    :param x:
-    :return: -x
-    """
     if isinstance(x, OpNegVar):  # --x == x
         return x.arg
     return OpNegVar(x)
@@ -259,7 +265,11 @@ Var.__neg__ = v_neg
 class OpLogVar(OpMonoVar):
     r"""
     logを表すクラス
+
     底は自然対数
+
+    .. :math::
+        \frac{\partial}{\partial x}\log x = \frac{1}{x}
     """
 
     def __init__(self, arg: Var):
@@ -270,20 +280,10 @@ class OpLogVar(OpMonoVar):
         self.op_name = "log"
 
     def chain(self):
-        r"""
-        $$
-        \frac{\partial}{\partial x}\log x = \frac{1}{x}
-        $$
-        :return:
-        """
         self.arg.adj += self.adj / self.arg
 
 
 def log(x: Var):
-    r"""
-    :param x:
-    :return: log(x)
-    """
     if isinstance(x, OpPowVar):  # log(a**b) == b * log(a)
         return x.rarg * OpLogVar(x.larg)
     else:
@@ -293,6 +293,9 @@ def log(x: Var):
 class OpSinVar(OpMonoVar):
     r"""
     sinを表すクラス
+
+    .. :math::
+        \frac{\partial}{\partial x}\sin x = \cos x
     """
 
     def __init__(self, arg: Var):
@@ -303,26 +306,19 @@ class OpSinVar(OpMonoVar):
         self.op_name = "sin"
 
     def chain(self):
-        r"""
-        $$
-        \frac{\partial}{\partial x}\sin x = \cos x
-        $$
-        :return:
-        """
         self.arg.adj += self.adj * cos(self.arg)
 
 
 def sin(x: Var):
-    r"""
-    :param x:
-    :return: sin(x)
-    """
     return OpSinVar(x)
 
 
 class OpCosVar(OpMonoVar):
     r"""
     cosを表すクラス
+
+    .. :math::
+        \frac{\partial}{\partial x}\cos x = -\sin x
     """
 
     def __init__(self, arg: Var):
@@ -333,12 +329,6 @@ class OpCosVar(OpMonoVar):
         self.op_name = "cos"
 
     def chain(self):
-        r"""
-        $$
-        \frac{\partial}{\partial x}\cos x = -\sin x
-        $$
-        :return:
-        """
         self.arg.adj -= self.adj * sin(self.arg)
 
 
@@ -390,6 +380,10 @@ class OpBinVar(Var):
 class OpAddVar(OpBinVar):
     r"""
     加算を表すクラス
+
+    .. :math::
+        \frac{\parial l + r}{\partial l} = 1\\
+        \frac{\parial l + r}{\partial r} = 1
     """
 
     def __init__(self, larg, rarg):
@@ -414,11 +408,6 @@ class OpAddVar(OpBinVar):
     def chain_vv(self):
         r"""
         l,rともにVarのinstanceの場合のchainメソッド
-        :return:
-        $$
-        \frac{\parial l + r}{\partial l} = 1
-        \frac{\parial l + r}{\partial r} = 1
-        $$
         """
         self.larg.adj += self.adj
         self.rarg.adj += self.adj
@@ -426,14 +415,12 @@ class OpAddVar(OpBinVar):
     def chain_vf(self):
         r"""
         lがVarのinstance,rがfloatの場合のchainメソッド
-        :return:
         """
         self.larg.adj += self.adj
 
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
-        :return:
         """
         self.rarg.adj += self.adj
 
@@ -480,9 +467,13 @@ Var.__radd__ = v_radd
 class OpSubVar(OpBinVar):
     r"""
     減算を表すクラス
+
+    .. :math::
+        \frac{\parial l - r}{\partial l} = 1\\
+        \frac{\parial l - r}{\partial r} = -1
     """
 
-    def __init__(self, larg: Var, rarg):
+    def __init__(self, larg, rarg):
         r"""
         :param larg:
         :param rarg:
@@ -504,11 +495,6 @@ class OpSubVar(OpBinVar):
     def chain_vv(self):
         r"""
         l,rともにVarのinstanceの場合のchainメソッド
-        :return:
-        $$
-        \frac{\parial l - r}{\partial l} = 1
-        \frac{\parial l - r}{\partial r} = -1
-        $$
         """
         self.larg.adj += self.adj
         self.rarg.adj -= self.adj
@@ -516,14 +502,12 @@ class OpSubVar(OpBinVar):
     def chain_vf(self):
         r"""
         lがVarのinstance,rがfloatの場合のchainメソッド
-        :return:
         """
         self.larg.adj += self.adj
 
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
-        :return:
         """
         self.rarg.adj -= self.adj
 
@@ -571,9 +555,13 @@ Var.__rsub__ = v_rsub
 class OpMulVar(OpBinVar):
     r"""
     乗算を表すクラス
+
+    .. :math::
+        \frac{\parial lr}{\partial l} = r\\
+        \frac{\parial lr}{\partial r} = l
     """
 
-    def __init__(self, larg: Var, rarg):
+    def __init__(self, larg, rarg):
         r"""
         :param larg:
         :param rarg:
@@ -595,11 +583,6 @@ class OpMulVar(OpBinVar):
     def chain_vv(self):
         r"""
         l,rともにVarのinstanceの場合のchainメソッド
-        :return:
-        $$
-        \frac{\parial lr}{\partial l} = r
-        \frac{\parial lr}{\partial r} = l
-        $$
         """
         self.larg.adj += self.adj * self.rarg
         self.rarg.adj += self.adj * self.larg
@@ -607,14 +590,12 @@ class OpMulVar(OpBinVar):
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
-        :return:
         """
         self.rarg.adj += self.adj * self.larg
 
     def chain_vf(self):
         r"""
         lがVarのinstance,rがfloatの場合のchainメソッド
-        :return:
         """
         self.larg.adj += self.adj * self.rarg
 
@@ -653,6 +634,10 @@ Var.__rmul__ = v_rmul
 class OpDivVar(OpBinVar):
     r"""
     除算を表すクラス
+
+    .. :math::
+        \frac{\parial l / r}{\partial l} = 1 / r\\
+        \frac{\parial l / r}{\partial r} = -l / r^2
     """
 
     def __init__(self, larg: Var, rarg):
@@ -676,12 +661,8 @@ class OpDivVar(OpBinVar):
 
     def chain_vv(self):
         r"""
-        l,rともにVarのinstanceの場合のchainメソッド
         :return:
-        $$
-        \frac{\parial l / r}{\partial l} = 1 / r
-        \frac{\parial l / r}{\partial r} = -l / r^2
-        $$
+        l,rともにVarのinstanceの場合のchainメソッド
         """
         self.larg.adj += self.adj / self.rarg
         self.rarg.adj += self.adj * -self.larg / self.rarg ** 2.0
@@ -723,6 +704,10 @@ Var.__rtruediv__ = v_rdiv
 class OpPowVar(OpBinVar):
     r"""
     冪乗を表すクラス
+
+    .. :math::
+        \frac{\parial l^r}{\partial l} = r * l^(r - 1)\\
+        \frac{\parial l^r}{\partial r} = l^r * \log(l)
     """
 
     def __init__(self, larg, rarg):
@@ -748,11 +733,6 @@ class OpPowVar(OpBinVar):
     def chain_vv(self):
         r"""
         l,rともにVarのinstanceの場合のchainメソッド
-        :return:
-        $$
-        \frac{\parial l^r}{\partial l} = r * l^(r - 1)
-        \frac{\parial l^r}{\partial r} = l^r * \log(l)
-        $$
         """
         self.larg.adj += self.adj * self.rarg * self.larg ** (self.rarg - 1.0)
         self.rarg.adj += self.adj * self.larg ** self.rarg * log(self.larg)
@@ -760,14 +740,12 @@ class OpPowVar(OpBinVar):
     def chain_fv(self):
         r"""
         lがfloat,rがVarのinstanceの場合のchainメソッド
-        :return:
         """
         self.rarg.adj += self.adj * self.larg ** self.rarg * math.log(self.larg)
 
     def chain_vf(self):
         r"""
         lがVarのinstance,rがfloatの場合のchainメソッド
-        :return:
         """
         self.larg.adj += self.adj * self.rarg * self.larg ** (self.rarg - 1.0)
 
@@ -791,20 +769,40 @@ Var.__pow__ = v_pow
 Var.__rpow__ = v_rpow
 
 
-def test():
+def example():
+    # 変数を用意
     x = Var(1.0)
     y = Var(1.0)
-    z = x * y + log(x ** y)  # 式の構築 構築時にある程度最適化される(この場合, y*(x+logx) となる)
-    print("z =", z.to_s(symbol_table=locals()), "=", z.val)  # to_sメソッドでlocals()を用いてstringを取得できる valメンバにはその変数の値が入る
-    z.grad()  # ∂z/∂x,∂z/∂yを計算(x.adj,y.adj)で取得できる
+
+    # 式の構築 構築時にある程度最適化される(この場合, y*(x+logx) となる)
+    z = x * y + log(x ** y)
+
+    # to_sメソッドでlocals()を用いてstringを取得できる valメンバにはその変数の値が入る
+    print("z =", z.to_s(symbol_table=locals()), "=", z.val)
+    # z = (y*(x+logx)) = 1.0
+
+    # 偏微分(dz/dx,dz/dyなど)を計算
+    z.grad()
+
+    # 例えばdz/dxはx.adj
     dzdx = x.adj
-    print("∂z/∂x =", dzdx.to_s(symbol_table=locals()), "=", dzdx.val)
-    dzdx.grad()  # adjが定数にならない限り,何回でも微分できる.
+
+    # dzdx(=x.adj)も(この場合)Varのインスタンスなので.to_sメソッドや.valメンバを持つ
+    # dzdxがxにもyにも依存しないとき定数となり,その型はfloatであることに注意
+    print("dz/dx =", dzdx.to_s(symbol_table=locals()), "=", dzdx.val)
+    # dz/dx = (y+(y/x)) = 2.0
+
+    # 定数にならない限り,何回でも微分できる.
+    dzdx.grad()
+
+    # ここでのy.adjはz.grad()直後のy.adj(=dz/dy)とは異なりd^2z/dydxであることに注意
     dzdxdy = y.adj
-    print("∂^2z/∂y∂x =", dzdxdy.to_s(symbol_table=locals()), "=", dzdxdy.val)
+    print("d^2z/dydx =", dzdxdy.to_s(symbol_table=locals()), "=", dzdxdy.val)
+    # d^2z/dydx = (1.0+(1.0/x)) = 2.0
 
     # 画像生成
-    s = dzdx.graphviz(symbol_table=locals())  # graphviz用のstringを取得
+    z.grad()
+    s = z.graphviz(symbol_table=locals())  # graphviz用のstringを取得
     import os
     file = open("graph.dot", "w")
     print(s, file=file)
@@ -813,4 +811,4 @@ def test():
 
 
 if __name__ == "__main__":
-    test()
+    example()
